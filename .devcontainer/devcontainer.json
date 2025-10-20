@@ -9,5 +9,5 @@
     "--hostname", "r1dev", 
     "--name", "r1dev"
 ],
-  "postCreateCommand": "npm install -g @openai/codex-cli"
+  "postCreateCommand": "npm install -g @openai/codex"
 }
