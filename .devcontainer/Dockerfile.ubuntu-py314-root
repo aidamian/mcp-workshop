@@ -27,6 +27,7 @@ RUN apt-get update \
         tk-dev \
         wget \
         xz-utils \
+        openssh-client \
         zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -46,12 +47,19 @@ RUN curl -fsSL https://www.python.org/ftp/python/${PYTHON_VERSION}/Python-${PYTH
     && ln -sf /usr/local/bin/pip3.14 /usr/local/bin/pip3 \
     && rm -rf /tmp/python.tgz /tmp/Python-${PYTHON_VERSION}
 
+RUN curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR=/usr/local/bin sh
+
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get update \
     && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g npm@latest \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN npm install -g npm@latest @openai/codex
+
+COPY requirements.txt /tmp/requirements.txt
+RUN uv pip install --system -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
 RUN mkdir -p /workspaces
 

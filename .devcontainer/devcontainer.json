@@ -1,7 +1,7 @@
 {
   "name": "r1dev",
   "build": {
-    "dockerfile": "Dockerfile.ubuntu-py314",
+    "dockerfile": "Dockerfile.ubuntu-py314-root",
     "context": ".."
   },
   "remoteUser": "vscode",
@@ -9,5 +9,5 @@
     "--hostname", "r1dev", 
     "--name", "r1dev"
 ],
-  "postCreateCommand": "npm install -g @openai/codex"
+  "postCreateCommand": ""
 }
