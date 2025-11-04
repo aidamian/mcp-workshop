@@ -1,39 +1,42 @@
 # MCP Workshop
-This repository demonstrates a Deepseek-powered stock data assistant that follows a lightweight Model Context Protocol (MCP) workflow. A conversational client leverages Deepseek for natural-language routing, while a tool server resolves stock lookups with live Yahoo Finance data and a deterministic CSV fallback.
+This repository demonstrates a Deepseek-powered stock data assistant with two interchangeable implementations:
+
+- **Raw stdio variant (`raw_version/`)** — mirrors the original workshop with a lightweight JSON-over-stdio contract between the client and server.
+- **MCP SDK variant (`mcp_version/`)** — reimplements the transport using the official `modelcontextprotocol` package so any MCP-capable tooling can connect.
+
+The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw implementation for backwards compatibility, while the new MCP-aware modules live under `mcp_version/`.
 
 ## Features
 
-- 🤖 Deepseek-Assisted Query Understanding: Uses Deepseek to classify natural language into tool calls when connectivity allows, with keyword heuristics as a backup.
-- 📊 Dual Data Sources: Prioritises Yahoo Finance through `yfinance`, with `stocks_data.csv` supplying reliable offline results.
-- 🔄 MCP-Style Tool Routing: JSON-over-stdio contract between client and server keeps the workshop true to MCP concepts without extra infrastructure.
-- 💬 Interactive CLI: `mcp_client.py` offers a conversational REPL that accepts everyday language.
-- 🛡️ Graceful Degradation: Automatic fallbacks for both AI routing and market data avoid hard failures during workshops.
+- 🤖 Deepseek-Assisted Query Understanding: Natural-language prompts are routed to tools via Deepseek when an API key is present, with deterministic heuristics as a fallback.
+- 📊 Dual Data Sources: Yahoo Finance via `yfinance` when online, and `stocks_data.csv` for deterministic offline coverage.
+- 🔌 Two Transport Options: Choose between the original JSON-over-stdio flow or the MCP SDK-powered tooling, depending on your integration target.
+- 💬 Interactive CLIs: Both variants ship conversational REPLs that mirror the same user experience.
+- 🛡️ Graceful Degradation: Router and data providers fall back automatically so live workshops continue to run even without network access.
 
 ## Architecture
 
-### MCP Client (`mcp_client.py`)
+### Raw Variant (`raw_version/`)
 
-- Loads the Deepseek API key from `.env`.
-- Sends the user query to Deepseek for routing (or a deterministic heuristic if the key/network is unavailable).
-- Launches `mcp_server.py` as a subprocess and communicates via line-delimited JSON messages.
-- Formats tool responses for display in the terminal.
+- `raw_version/client.py` contains the original Deepseek router, stdio subprocess client, and REPL.
+- `raw_version/server.py` exposes `get_stock_price` and `compare_stocks` tools over newline-delimited JSON.
+- Root modules (`mcp_client.py`, `mcp_server.py`) wrap this package to keep legacy imports and scripts working.
 
-### MCP Server (`mcp_server.py`)
+### MCP Variant (`mcp_version/`)
 
-- Loads fallback pricing data from `stocks_data.csv`.
-- Exposes two tools: `get_stock_price` and `compare_stocks`.
-- Attempts to fetch real-time prices with `yfinance`, then falls back to the CSV cache on error.
-- Speaks the same JSON protocol as the client over stdio, making it easy to swap or extend tools.
+- `mcp_version/server.py` reuses the `StockDataProvider` but registers tools on an `mcp.server.Server`, serving over stdio via the MCP transport helpers.
+- `mcp_version/client.py` launches the MCP server in-process, establishes an MCP session using `StdioClientTransport`, and keeps the same routing logic and terminal UX.
+- Any external MCP-aware client (for example, IDE integrations or agent frameworks) can connect to `mcp_version/server.py` directly.
 
 ## Getting Started
 
 ### Prerequisites
 
 - Python 3.10 or higher
-- A Deepseek API key (set as `DEEPSEEK_KEY` in `.env`)
-- Internet connectivity for real-time Yahoo Finance data (optional but recommended)
+- A Deepseek API key (set `DEEPSEEK_KEY` in `.env`) for AI-assisted routing
+- Optional internet connectivity for live Yahoo Finance data
 
-### Setup
+### Common Setup
 
 1. Create and activate a virtual environment:
    ```bash
@@ -44,57 +47,57 @@ This repository demonstrates a Deepseek-powered stock data assistant that follow
    ```bash
    pip install -r requirements.txt
    ```
-3. Populate `.env`:
+3. Provide configuration:
    ```dotenv
    DEEPSEEK_KEY=your_deepseek_key_here
    ```
-4. Confirm that `stocks_data.csv` is present. It ships with representative tickers so no additional work is required.
+4. Ensure `stocks_data.csv` remains in the repository root. It supplies deterministic fixtures for offline testing.
 
-### Running the Assistant
+### Running the Raw JSON Variant
 
-1. Start the conversational client:
+1. Start the client (legacy behaviour retained):
    ```bash
    python mcp_client.py
    ```
-2. Enter natural language queries:
+2. Example prompts:
    ```
-   What is your query? → What's the current price of AAPL?
-   What is your query? → Compare Apple and Microsoft stocks
+   What's the current price of AAPL?
+   Compare Apple and Microsoft stocks
    ```
-3. Exit with `exit` or `quit`.
+3. Enable verbose logging:
+   ```bash
+   python mcp_client.py --debug
+   ```
 
-Enable verbose logging (including Deepseek payloads and tool responses) with the debug flag:
+### Running the MCP SDK Variant
 
-```bash
-python mcp_client.py --debug
-```
-
-### Example Interactions
-
-- **Single Stock**
-  ```
-  Input:  What's the price of AAPL?
-  Output: The current price of AAPL is $188.12 (yfinance).
-  ```
-- **Comparison**
-  ```
-  Input:  Compare Apple and Microsoft stocks
-  Output: AAPL is trading lower than MSFT (188.12 vs 405.15).
-  ```
-- **Offline Fallback**
-  ```
-  Input:  Get Tesla stock price
-  Output: The current price of TSLA is $198.45 (fallback_csv).
-  ```
+1. Launch the MCP-aware client:
+   ```bash
+   python -m mcp_version.client
+   ```
+2. The interactive loop mirrors the raw experience while using the MCP transport under the hood.
+3. Alternatively, run only the server for external MCP clients:
+   ```bash
+   python -m mcp_version.server
+   ```
+   Connect with your preferred MCP-enabled tooling by configuring it to spawn this module over stdio.
 
 ## Repository Layout
 
 ```
-├── mcp_client.py          # Deepseek-enabled conversational client
-├── mcp_server.py          # MCP-style tool server for stock lookups
+├── mcp_client.py          # Wrapper around the raw client implementation
+├── mcp_server.py          # Wrapper around the raw server implementation
+├── raw_version/
+│   ├── __init__.py
+│   ├── client.py          # Original Deepseek router and stdio transport
+│   └── server.py          # JSON-over-stdio tool server
+├── mcp_version/
+│   ├── __init__.py
+│   ├── client.py          # MCP SDK client using StdioClientTransport
+│   └── server.py          # MCP SDK server exposing the stock tools
 ├── stocks_data.csv        # Offline stock price cache
-├── requirements.txt       # Python dependencies
-├── .env                   # Environment variables (ignored by git)
+├── requirements.txt       # Python dependencies for both variants
+├── tests/                 # Integration tests against the raw variant
 └── README.md              # Project overview
 ```
 
@@ -114,24 +117,25 @@ python mcp_client.py --debug
 
 ## Configuration Reference
 
-- `.env` must define `DEEPSEEK_KEY`. If absent, the client prints a warning and uses the heuristic router.
-- `stocks_data.csv` follows the format `symbol,price,last_updated`. Extend it with additional rows to enrich offline coverage.
+- `.env` must define `DEEPSEEK_KEY`. Without it the router falls back to keyword heuristics.
+- `stocks_data.csv` follows `symbol,price,last_updated`. Extend it with additional rows for more offline coverage.
 
 ## Data Sources
 
-- **Primary:** `yfinance` for real-time data (requires network access).
+- **Primary:** `yfinance` for real-time data (requires outbound HTTPS).
 - **Fallback:** `stocks_data.csv` for deterministic responses during workshops or offline sessions.
 
 ## Troubleshooting
 
-- **Deepseek routing errors:** Ensure `DEEPSEEK_KEY` is set and that outbound HTTPS is allowed. The CLI will continue with keyword routing if the API call fails.
-- **Yahoo Finance connectivity issues:** Network/SSL problems automatically trigger the CSV fallback. Populate `stocks_data.csv` with the needed tickers if you expand beyond the defaults.
-- **Unhandled prompts:** Use explicit tickers (e.g., `AAPL`, `MSFT`) to improve routing accuracy, especially when running without the Deepseek key.
+- **Deepseek routing errors:** Confirm `DEEPSEEK_KEY` and network access. The client automatically falls back to heuristics when the API call fails.
+- **Yahoo Finance connectivity issues:** Network/SSL problems trigger the CSV fallback. Populate `stocks_data.csv` with the tickers you need.
+- **Integrating external MCP clients:** Run `python -m mcp_version.server` and point your MCP tooling at the spawned process. Ensure the tool accepts stdio transports.
 
 ## Dependencies
 
-- `python-dotenv` — load `.env` files for configuration.
+- `python-dotenv` — load environment variables from `.env`.
 - `requests` — call the Deepseek REST API.
 - `yfinance` — fetch live stock prices when available.
+- `modelcontextprotocol` — provide MCP server/client transports for the SDK variant.
 
 Run `python -m compileall` before committing changes that touch server tooling to catch syntax issues early.
