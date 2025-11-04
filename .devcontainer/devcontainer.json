@@ -1,13 +1,12 @@
 {
   "name": "r1dev",
   "build": {
-    "dockerfile": "Dockerfile.ubuntu-py314-root",
+    "dockerfile": "Dockerfile.ubuntu-py313-root",
     "context": ".."
   },
-  "remoteUser": "vscode",
   "runArgs": [
-    "--hostname", "r1dev", 
-    "--name", "r1dev"
+    "--hostname", "r1dev-mcp", 
+    "--name", "r1dev-mcp"
 ],
   "postCreateCommand": ""
 }
