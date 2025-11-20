@@ -1,47 +1,44 @@
-"""
-Compatibility wrapper that exposes the raw MCP client implementation.
-
-The repository now contains two variants of the workshop: a raw stdio client
-and an MCP SDK-powered client. This module keeps the original import surface
-so existing callers and tests continue to function without modification.
-"""
-
 from __future__ import annotations
 
-from raw_version.client import (
-    COLOR_CODES,
-    DEEPSEEK_API_URL,
-    DEFAULT_MODEL,
-    KNOWN_TICKERS,
-    NAME_TO_TICKER,
-    DeepseekRouter,
-    StockToolClient,
-    ToolCall,
-    interactive_loop,
-    log_color,
-    main as raw_main,
-    render_result,
-)
+"""
+Variant launcher for the MCP workshop client.
 
-__all__ = [
-    "COLOR_CODES",
-    "DEEPSEEK_API_URL",
-    "DEFAULT_MODEL",
-    "KNOWN_TICKERS",
-    "NAME_TO_TICKER",
-    "DeepseekRouter",
-    "StockToolClient",
-    "ToolCall",
-    "interactive_loop",
-    "log_color",
-    "render_result",
-    "main",
-]
+Usage:
+  python mcp_client.py           # defaults to raw variant
+  python mcp_client.py --variant mcp
+  python mcp_client.py --variant course
+"""
+
+import argparse
+import importlib
+import sys
+from typing import Literal
+
+Variant = Literal["raw", "mcp", "course"]
+
+
+def _load_variant(variant: Variant):
+  if variant == "raw":
+    return importlib.import_module("raw_version.client")
+  if variant == "mcp":
+    return importlib.import_module("mcp_version.client")
+  if variant == "course":
+    return importlib.import_module("course_version.client")
+  raise ValueError(f"Unknown variant {variant}")
 
 
 def main() -> None:
-  """Entrypoint alias preserved for backwards compatibility."""
-  raw_main()
+  parser = argparse.ArgumentParser(description="Launch MCP workshop client.")
+  parser.add_argument(
+    "--variant",
+    choices=["raw", "mcp", "course"],
+    default="raw",
+    help="Client variant to run (default: raw).",
+  )
+  args, remaining = parser.parse_known_args()
+  module = _load_variant(args.variant)
+  sys.argv = [sys.argv[0], *remaining]
+  module.main()
 
 
 if __name__ == "__main__":
