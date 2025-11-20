@@ -12,14 +12,8 @@ from dotenv import load_dotenv
 
 from openai import OpenAI
 
-from raw_version.client import (
-  DEFAULT_MODEL,
-  ToolCall,
-  log_color,
-  log_lifecycle_event,
-  render_result,
-)
-from raw_version.client import DeepseekRouter as BaseRouter
+from utils.deepseek import DEFAULT_MODEL, DeepseekRouter as BaseRouter
+from utils.utils import ToolCall, log_color, log_lifecycle_event, render_result
 
 try:  # pragma: no cover - optional dependency for this variant
   from mcp import ClientSession, StdioServerParameters
