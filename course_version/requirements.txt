@@ -1,0 +1,4 @@
+mcp[cli]==1.8.1
+yfinance==0.2.61
+#google-genai==1.15.0
+python-dotenv==1.1.0

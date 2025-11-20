@@ -1,3 +1,8 @@
+"""
+Course variant of the MCP client that uses the official MCP package plus Google
+Gemini for tool routing. Logging follows the raw_version colour lifecycle.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -9,89 +14,68 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
+from google import genai
 
-from openai import OpenAI
-
-from raw_version.client import (
-  DEFAULT_MODEL,
-  ToolCall,
-  log_color,
-  log_lifecycle_event,
-  render_result,
-)
-from raw_version.client import DeepseekRouter as BaseRouter
+from raw_version.client import DeepseekRouter, ToolCall, log_color, log_lifecycle_event, render_result
 
 try:  # pragma: no cover - optional dependency for this variant
   from mcp import ClientSession, StdioServerParameters
   from mcp.client.stdio import stdio_client
 except ImportError as exc:  # pragma: no cover - deferred dependency
-  raise ImportError("Install the 'mcp' package to use the MCP client variant.") from exc
+  raise ImportError("Install the 'mcp' package to use the course MCP client.") from exc
 
 
-class OpenAIBackedRouter(BaseRouter):
-  """
-  Router that uses the official OpenAI Python SDK for structured routing with Deepseek.
-  """
+class GeminiRouter:
+  """Route user prompts to tools using Gemini, with heuristic fallback."""
 
-  def __init__(
-    self,
-    api_key: Optional[str],
-    model: str = DEFAULT_MODEL,
-    base_url: str = "https://api.deepseek.com",
-    debug: bool = True,
-  ) -> None:
-    super().__init__(api_key=api_key, model=model, debug=debug)
-    self.base_url = base_url
-    self._client: Optional[OpenAI] = OpenAI(api_key=api_key, base_url=base_url) if api_key else None
+  def __init__(self, api_key: Optional[str], model: str = "gemini-1.5-flash-latest", debug: bool = True) -> None:
+    self.api_key = api_key
+    self.model = model
+    self.debug = debug
+    self._client: Optional[genai.Client] = genai.Client(api_key=api_key) if api_key else None
+    # Heuristic-only fallback
+    self._fallback = DeepseekRouter(api_key=None, debug=debug)
 
-  def _deepseek_route(self, prompt: str) -> ToolCall:
-    if not self._client:
-      raise ValueError("Deepseek API key is not configured.")
-
-    payload_messages = [
-      {
-        "role": "system",
-        "content": (
-          "You are a routing assistant for a stock data toolset. "
-          "Map the user's prompt to either 'get_stock_price' or "
-          "'compare_stocks'. Always return JSON with keys "
-          "tool (string) and arguments (object). For get_stock_price "
-          "provide symbol. For compare_stocks provide symbol_one and "
-          "symbol_two. Symbols must be uppercase tickers."
-        ),
-      },
-      {"role": "user", "content": prompt},
-    ]
-    self._log_debug(f"[Deepseek/OpenAI] Request messages: {payload_messages}")
-    response = self._client.chat.completions.create(
-      model=self.model,
-      messages=payload_messages,
-      response_format={"type": "json_object"},
-      timeout=20,
-    )
-    choice_message = response.choices[0].message
-    content = choice_message.content or ""
-    if isinstance(content, list):
-      content = "".join(str(chunk) for chunk in content)
-    self._log_debug(f"[Deepseek/OpenAI] Raw content: {content}")
-
+  def route(self, prompt: str) -> ToolCall:
+    if self._client is None:
+      return self._fallback.route(prompt)
     try:
-      parsed = json.loads(content)
-    except json.JSONDecodeError as exc:
-      raise ValueError("Deepseek response was not valid JSON.") from exc
+      return self._gemini_route(prompt)
+    except Exception as exc:  # pylint: disable=broad-except
+      if self.debug:
+        log_color(f"[Gemini Router] Falling back to heuristics due to: {exc}", "d", prefix="[debug]")
+      return self._fallback.route(prompt)
+
+  def _gemini_route(self, prompt: str) -> ToolCall:
+    template = (
+      "You are a routing assistant for a stock data toolset. "
+      "Map the user's prompt to either 'get_stock_price' or "
+      "'compare_stocks'. Always return JSON with keys "
+      "tool (string) and arguments (object). For get_stock_price provide symbol. "
+      "For compare_stocks provide symbol_one and symbol_two. Symbols must be uppercase tickers.\n"
+      f"User prompt: {prompt}"
+    )
+    response = self._client.models.generate_content(  # type: ignore[union-attr]
+      model=self.model,
+      contents=template,
+    )
+    raw = response.text.strip() if hasattr(response, "text") else str(response)
+    raw = raw.replace("```json", "").replace("```", "")
+    parsed = json.loads(raw)
 
     tool_name = parsed.get("tool")
     arguments = parsed.get("arguments")
     if tool_name not in {"get_stock_price", "compare_stocks"} or not isinstance(arguments, dict):
-      raise ValueError("Deepseek response did not include a valid tool call.")
+      raise ValueError("Gemini response did not include a valid tool call.")
 
-    tool_call = ToolCall(tool_name, {key: str(value) for key, value in arguments.items()}, source="openai")
-    self._log_debug(f"[Deepseek/OpenAI] Routed to: {tool_call.name} with args {tool_call.arguments}")
+    tool_call = ToolCall(tool_name, {key: str(value) for key, value in arguments.items()}, source="gemini")
+    if self.debug:
+      log_color(f"[Gemini Router] Routed to: {tool_call.name} with args {tool_call.arguments}", "d", prefix="[debug]")
     return tool_call
 
 
-class MCPStockClient:
-  """Manage an MCP stdio session against the stock tool server using the official MCP package."""
+class CourseMCPClient:
+  """Thin MCP client using the official package for the course variant."""
 
   def __init__(self, server_path: Path, debug: bool = True) -> None:
     self.server_path = server_path
@@ -101,7 +85,7 @@ class MCPStockClient:
     self._write = None
     self._stdio_cm = None
 
-  async def __aenter__(self) -> "MCPStockClient":
+  async def __aenter__(self) -> "CourseMCPClient":
     await self.start()
     return self
 
@@ -109,27 +93,25 @@ class MCPStockClient:
     await self.shutdown()
 
   async def start(self) -> None:
-    """Launch the MCP server subprocess and handshake a session."""
     if self._session is not None:
       return
-
-    params = StdioServerParameters(command=sys.executable, args=["-u", str(self.server_path)])
+    params = StdioServerParameters(
+      command=os.environ.get("PYTHON", sys.executable),
+      args=["-u", str(self.server_path)],
+    )
     if self.debug:
-      log_color(f"[MCP Client] Starting server: {params}", "d", prefix="[debug]")
-
+      log_color(f"[Course MCP Client] Starting server: {params}", "d", prefix="[debug]")
     self._stdio_cm = stdio_client(params)
     self._read, self._write = await self._stdio_cm.__aenter__()
     self._session = ClientSession(self._read, self._write)
     await self._session.initialize()
     if self.debug:
-      log_color("[MCP Client] MCP session initialised.", "d", prefix="[debug]")
+      log_color("[Course MCP Client] MCP session initialised.", "d", prefix="[debug]")
 
   async def shutdown(self) -> None:
-    """Terminate the MCP session and the underlying subprocess."""
     if self._session is not None:
       await self._session.close()
       self._session = None
-
     if self._write is not None:
       await self._write.aclose()
       self._write = None
@@ -141,7 +123,6 @@ class MCPStockClient:
       self._stdio_cm = None
 
   async def invoke(self, tool_call: ToolCall) -> Dict[str, Any]:
-    """Execute a tool call over the MCP session."""
     if self._session is None:
       raise RuntimeError("MCP session is not initialised.")
 
@@ -149,7 +130,6 @@ class MCPStockClient:
       "mcp",
       f"Dispatching request to {tool_call.name} with arguments {tool_call.arguments}",
     )
-
     response = await self._session.call_tool(tool_call.name, tool_call.arguments)
 
     payload: Dict[str, Any] = {}
@@ -180,24 +160,22 @@ class MCPStockClient:
 
 
 async def interactive_loop(debug: bool = True) -> None:
-  """Run the async REPL that communicates with the MCP server."""
   load_dotenv()
-  api_key = os.getenv("DEEPSEEK_KEY")
-  base_url = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-  router = OpenAIBackedRouter(api_key=api_key, base_url=base_url, debug=debug)
+  api_key = os.getenv("GEMINI_API_KEY")
+  router = GeminiRouter(api_key=api_key, debug=debug)
   server_path = Path(__file__).with_name("server.py")
 
   if api_key:
-    log_color("Deepseek routing is enabled via OpenAI SDK.", "w")
+    log_color("Gemini routing is enabled via google-genai SDK.", "w")
   else:
-    log_color("Deepseek API key not found. Falling back to keyword routing.", "w")
+    log_color("Gemini API key not found. Falling back to keyword routing.", "w")
 
   if debug:
     log_color("Debug mode enabled; verbose MCP logs will be displayed.", "d", prefix="[debug]")
 
   log_color("Type 'exit' or 'quit' to leave the session.", "w")
 
-  async with MCPStockClient(server_path=server_path, debug=debug) as client:
+  async with CourseMCPClient(server_path=server_path, debug=debug) as client:
     while True:
       try:
         prompt_text = log_color("What is your query? → ", "w", emit=False)
@@ -208,7 +186,7 @@ async def interactive_loop(debug: bool = True) -> None:
         break
 
       if debug:
-        log_color(f"[MCP Client] User input: {user_input}", "d", prefix="[debug]")
+        log_color(f"[Course MCP Client] User input: {user_input}", "d", prefix="[debug]")
 
       if user_input.strip().lower() in {"exit", "quit"}:
         log_color("Goodbye.", "w")
@@ -248,8 +226,7 @@ async def interactive_loop(debug: bool = True) -> None:
 
 
 def main() -> None:
-  """CLI entry point for the MCP-enabled client."""
-  parser = argparse.ArgumentParser(description="Interact with the MCP-enabled stock client.")
+  parser = argparse.ArgumentParser(description="Course MCP client using google-genai routing.")
   parser.add_argument(
     "--no-debug",
     dest="debug",

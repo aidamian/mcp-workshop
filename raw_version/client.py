@@ -31,6 +31,7 @@ COLOR_CODES = {
   "d": "\033[90m",   # dark grey
   "w": "\033[97m",   # white
   "b": "\033[94m",   # blue
+  "p": "\033[95m",   # purple / magenta
   "y": "\033[33m",   # yellow
   "r": "\033[31m",   # red
 }
@@ -97,6 +98,30 @@ def log_color(
   return formatted
 
 
+LIFECYCLE_STAGES = {
+  "query": ("User query received", "w", "[agent]"),
+  "analysis": ("Model analysis & tool selection", "b", "[model]"),
+  "mcp": ("MCP client dispatch", "p", "[mcp-client]"),
+  "prepare": ("Model drafting response", "y", "[model]"),
+  "final": ("Model final response", "g", "[model]"),
+}
+
+
+def log_lifecycle_event(stage: str, detail: str) -> None:
+  """
+  Emit a colour-coded lifecycle event for the raw client flow.
+
+  Parameters
+  ----------
+  stage : str
+      Logical lifecycle stage identifier (for example ``"query"`` or ``"mcp"``).
+  detail : str
+      Human-readable description of the event.
+  """
+  label, color, prefix = LIFECYCLE_STAGES.get(stage, ("Event", "w", "[agent]"))
+  log_color(f"{label}: {detail}", color, prefix=prefix)
+
+
 @dataclass
 class ToolCall:
   """
@@ -108,10 +133,13 @@ class ToolCall:
       Name of the tool to invoke.
   arguments : Dict[str, str]
       Dictionary of serialised arguments relevant to the tool.
+  source : str
+      Origin of the routing decision (for example ``"deepseek"`` or ``"heuristic"``).
   """
 
   name: str
   arguments: Dict[str, str]
+  source: str = "unknown"
 
 
 class DeepseekRouter:
@@ -123,7 +151,7 @@ class DeepseekRouter:
   continue without external connectivity.
   """
 
-  def __init__(self, api_key: Optional[str], model: str = DEFAULT_MODEL, debug: bool = False) -> None:
+  def __init__(self, api_key: Optional[str], model: str = DEFAULT_MODEL, debug: bool = True) -> None:
     """
     Create a router instance.
 
@@ -167,13 +195,13 @@ class DeepseekRouter:
 
     if not self.api_key:
       self._log_debug("[Router] No Deepseek key detected; using heuristic classifier.")
-      return self._fallback_route(cleaned_prompt)
+      return self._fallback_route(cleaned_prompt, source_label="heuristic_no_key")
 
     try:
       return self._deepseek_route(cleaned_prompt)
     except Exception as exc:
       self._log_debug(f"[Router] Deepseek routing failed ({exc}); reverting to heuristics.")
-      return self._fallback_route(cleaned_prompt)
+      return self._fallback_route(cleaned_prompt, source_label="heuristic_fallback")
 
   def _deepseek_route(self, prompt: str) -> ToolCall:
     """
@@ -230,6 +258,7 @@ class DeepseekRouter:
       raise ValueError("Deepseek did not return any choices.")
     message = choices[0].get("message") or {}
     content = message.get("content", "")
+    self._log_debug(f"[Deepseek]:\n {content}", color="b")
     if isinstance(content, list):
       content = "".join(
         chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
@@ -245,10 +274,11 @@ class DeepseekRouter:
     if tool_name not in {"get_stock_price", "compare_stocks"} or not isinstance(arguments, dict):
       raise ValueError("Deepseek response did not include a valid tool call.")
 
-    self._log_debug(f"[Deepseek] Routed to: {tool_name} with args {arguments}")
-    return ToolCall(tool_name, {key: str(value) for key, value in arguments.items()})
+    tool_call = ToolCall(tool_name, {key: str(value) for key, value in arguments.items()}, source="deepseek")
+    self._log_debug(f"[Deepseek] Routed to: {tool_call.name} with args {tool_call.arguments}")
+    return tool_call
 
-  def _fallback_route(self, prompt: str) -> ToolCall:
+  def _fallback_route(self, prompt: str, source_label: str = "heuristic") -> ToolCall:
     """
     Use a heuristic classifier when Deepseek is unavailable.
 
@@ -275,12 +305,16 @@ class DeepseekRouter:
       if len(symbols) < 2:
         raise ValueError("Could not determine two symbols to compare.")
       symbol_one, symbol_two = symbols[:2]
-      return ToolCall("compare_stocks", {"symbol_one": symbol_one, "symbol_two": symbol_two})
+      return ToolCall(
+        "compare_stocks",
+        {"symbol_one": symbol_one, "symbol_two": symbol_two},
+        source=source_label,
+      )
 
     if not symbols:
       raise ValueError("Could not determine a stock symbol from the query.")
 
-    return ToolCall("get_stock_price", {"symbol": symbols[0]})
+    return ToolCall("get_stock_price", {"symbol": symbols[0]}, source=source_label)
 
   def _extract_symbols(self, prompt: str) -> list[str]:
     """
@@ -318,7 +352,7 @@ class DeepseekRouter:
     dollar_tokens = re.findall(r"\$([A-Za-z]{1,5})", prompt)
     return [token.upper() for token in dollar_tokens if token.isalpha()]
 
-  def _log_debug(self, message: str) -> None:
+  def _log_debug(self, message: str, color: str = "d") -> None:
     """
     Emit a debug message when debugging is enabled.
 
@@ -328,7 +362,7 @@ class DeepseekRouter:
         Text to send to stdout.
     """
     if self.debug:
-      log_color(message, "d", prefix="[debug]")
+      log_color(message, color, prefix="[debug]")
 
 
 class StockToolClient:
@@ -336,7 +370,7 @@ class StockToolClient:
   Manage the lifecycle of the stock tool server and act as a thin RPC client.
   """
 
-  def __init__(self, server_path: Path, router: DeepseekRouter, debug: bool = False) -> None:
+  def __init__(self, server_path: Path, router: DeepseekRouter, debug: bool = True) -> None:
     """
     Create a new client.
 
@@ -471,6 +505,10 @@ class StockToolClient:
       "tool": tool_call.name,
       "arguments": tool_call.arguments,
     }
+    log_lifecycle_event(
+      "mcp",
+      f"Dispatching request {request_id} to {tool_call.name} with arguments {tool_call.arguments}",
+    )
     self._log_debug(f"[Client] Sending request: {payload}")
 
     self.process.stdin.write(json.dumps(payload) + "\n")
@@ -482,6 +520,10 @@ class StockToolClient:
       raise RuntimeError("Server returned an empty response.")
 
     response_payload = json.loads(response_line)
+    log_lifecycle_event(
+      "mcp",
+      f"Received response for request {request_id} with keys {list(response_payload.keys())}",
+    )
     if response_payload.get("id") != request_id:
       raise RuntimeError("Server response did not match the request id.")
 
@@ -534,7 +576,7 @@ def render_result(tool_call: ToolCall, result: Dict[str, object]) -> str:
   return "Received an unexpected tool response."
 
 
-def interactive_loop(debug: bool = False) -> None:
+def interactive_loop(debug: bool = True) -> None:
   """
   Run the interactive REPL loop that powers the workshop client.
 
@@ -574,22 +616,39 @@ def interactive_loop(debug: bool = False) -> None:
           log_color("Goodbye.", "w")
           break
 
+        log_lifecycle_event("query", user_input)
+
         try:
           tool_call = router.route(user_input)
-          if debug:
-            log_color(f"[Client] Routed tool call: {tool_call}", "d", prefix="[debug]")
+          analysis_detail = (
+            f"Strategy={tool_call.source}; tool={tool_call.name}; args={tool_call.arguments}"
+          )
+          log_lifecycle_event("analysis", analysis_detail)
         except ValueError as exc:
-          log_color(f"⚠️  {exc}", "w")
+          log_color(f"⚠️  {exc}", "r", prefix="[warning]")
           continue
 
         try:
           response = client.invoke(tool_call)
-          if debug:
-            log_color(f"[Client] Tool response payload: {response}", "d", prefix="[debug]")
+          data = response.get("data") if isinstance(response, dict) else {}
+          if tool_call.name == "get_stock_price":
+            detail = (
+              f"Symbol={data.get('symbol', 'UNKNOWN')}; source={data.get('source', 'unknown')}"
+            )
+          elif tool_call.name == "compare_stocks":
+            symbol_one = (data or {}).get("symbol_one", {})
+            symbol_two = (data or {}).get("symbol_two", {})
+            detail = (
+              f"Comparison payload ready: {symbol_one.get('symbol', '?')} vs "
+              f"{symbol_two.get('symbol', '?')}"
+            )
+          else:
+            detail = "Received response from tool execution."
+          log_lifecycle_event("prepare", detail)
           message = render_result(tool_call, response)
-          log_color(message, "g", prefix="[model]")
+          log_lifecycle_event("final", message)
         except Exception as exc:  # pylint: disable=broad-except
-          log_color(f"⚠️  {exc}", "w")
+          log_color(f"⚠️  {exc}", "r", prefix="[warning]")
   finally:
     pass
 
@@ -600,10 +659,12 @@ def main() -> None:
   """
   parser = argparse.ArgumentParser(description="Interact with the Deepseek MCP workshop client.")
   parser.add_argument(
-    "--debug",
-    action="store_true",
-    help="Enable verbose debug logging for routing and tool calls.",
+    "--no-debug",
+    dest="debug",
+    action="store_false",
+    help="Disable verbose debug logging (default: enabled).",
   )
+  parser.set_defaults(debug=True)
   args = parser.parse_args()
   interactive_loop(debug=args.debug)
 

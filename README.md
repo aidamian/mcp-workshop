@@ -2,7 +2,7 @@
 This repository demonstrates a Deepseek-powered stock data assistant with two interchangeable implementations:
 
 - **Raw stdio variant (`raw_version/`)** — mirrors the original workshop with a lightweight JSON-over-stdio contract between the client and server.
-- **MCP SDK variant (`mcp_version/`)** — reimplements the transport using the official `modelcontextprotocol` package so any MCP-capable tooling can connect.
+- **MCP SDK variant (`mcp_version/`)** — reimplements the transport using the official `mcp` PyPI package so any MCP-capable tooling can connect.
 
 The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw implementation for backwards compatibility, while the new MCP-aware modules live under `mcp_version/`.
 
@@ -24,8 +24,8 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 
 ### MCP Variant (`mcp_version/`)
 
-- `mcp_version/server.py` reuses the `StockDataProvider` but registers tools on an `mcp.server.Server`, serving over stdio via the MCP transport helpers.
-- `mcp_version/client.py` launches the MCP server in-process, establishes an MCP session using `StdioClientTransport`, and keeps the same routing logic and terminal UX.
+- `mcp_version/server.py` reuses the `StockDataProvider` but registers tools on `fastmcp` from the official `mcp` package, serving over stdio.
+- `mcp_version/client.py` launches the MCP server in-process, establishes an MCP session using `StdioServerParameters`/`stdio_client`, and keeps the same routing logic and terminal UX.
 - Any external MCP-aware client (for example, IDE integrations or agent frameworks) can connect to `mcp_version/server.py` directly.
 
 ## Getting Started
@@ -38,14 +38,14 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 
 ### Common Setup
 
-1. Create and activate a virtual environment:
+1. Create and activate a virtual environment with [uv](https://docs.astral.sh/uv/):
    ```bash
-   python -m venv .venv
+   uv venv
    source .venv/bin/activate
    ```
 2. Install dependencies:
    ```bash
-   pip install -r requirements.txt
+   uv pip install -r requirements.txt
    ```
 3. Provide configuration:
    ```dotenv
@@ -55,30 +55,40 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 
 ### Running the Raw JSON Variant
 
-1. Start the client (legacy behaviour retained):
+1. Start the client (legacy behaviour retained). Verbose lifecycle logging is on by default:
    ```bash
-   python mcp_client.py
+   uv run python mcp_client.py
    ```
 2. Example prompts:
    ```
    What's the current price of AAPL?
    Compare Apple and Microsoft stocks
    ```
-3. Enable verbose logging:
+3. To reduce output, disable debug logs explicitly:
    ```bash
-   python mcp_client.py --debug
+   uv run python mcp_client.py --no-debug
    ```
+
+### Logging Flow (Raw Variant)
+
+- `[agent]` (bright white): user-side events and prompts in the REPL.
+- `[model]` (blue): Deepseek/heuristic analysis that selects a tool and arguments.
+- `[mcp-client]` (purple): stdio dispatch/response lifecycle from the client transport.
+- `[mcp-server]` (purple): server execution logs for the invoked tool (stderr to avoid JSON noise).
+- `[model]` (yellow): model drafting based on the tool payload.
+- `[model]` (green): final model-facing reply shown to the user.
+- `[warning]` (red): validation issues and execution errors; distinct from agent white logs.
 
 ### Running the MCP SDK Variant
 
 1. Launch the MCP-aware client:
    ```bash
-   python -m mcp_version.client
+   uv run python -m mcp_version.client
    ```
 2. The interactive loop mirrors the raw experience while using the MCP transport under the hood.
 3. Alternatively, run only the server for external MCP clients:
    ```bash
-   python -m mcp_version.server
+   uv run python -m mcp_version.server
    ```
    Connect with your preferred MCP-enabled tooling by configuring it to spawn this module over stdio.
 
@@ -93,8 +103,11 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 │   └── server.py          # JSON-over-stdio tool server
 ├── mcp_version/
 │   ├── __init__.py
-│   ├── client.py          # MCP SDK client using StdioClientTransport
-│   └── server.py          # MCP SDK server exposing the stock tools
+│   ├── client.py          # Official MCP client using OpenAI SDK routing
+│   └── server.py          # Official MCP server using fastmcp
+├── course_version/        # Course-oriented MCP variant using google-genai routing
+│   ├── client.py
+│   └── server.py
 ├── stocks_data.csv        # Offline stock price cache
 ├── requirements.txt       # Python dependencies for both variants
 ├── tests/                 # Integration tests against the raw variant
@@ -118,6 +131,8 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 ## Configuration Reference
 
 - `.env` must define `DEEPSEEK_KEY`. Without it the router falls back to keyword heuristics.
+- `.env` can include `DEEPSEEK_BASE_URL` to override the Deepseek endpoint used by the OpenAI client.
+- `.env` may include `GEMINI_API_KEY` to enable Gemini routing in `course_version`.
 - `stocks_data.csv` follows `symbol,price,last_updated`. Extend it with additional rows for more offline coverage.
 
 ## Data Sources
@@ -136,6 +151,8 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 - `python-dotenv` — load environment variables from `.env`.
 - `requests` — call the Deepseek REST API.
 - `yfinance` — fetch live stock prices when available.
-- `modelcontextprotocol` — provide MCP server/client transports for the SDK variant.
+- `mcp` — official MCP client/server package powering the SDK variant.
+- `openai` — official SDK used for Deepseek routing with the MCP client.
+- `google-genai` — Google Gemini SDK used in the course variant routing.
 
 Run `python -m compileall` before committing changes that touch server tooling to catch syntax issues early.

@@ -22,6 +22,22 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
   yf = None  # type: ignore[assignment]
 
+SERVER_COLOR = "\033[95m"
+RESET_COLOR = "\033[0m"
+
+
+def log_server(message: str) -> None:
+  """
+  Emit colourised server-side lifecycle logs to stderr.
+
+  Parameters
+  ----------
+  message : str
+      Human-readable status text.
+  """
+  formatted = f"{SERVER_COLOR}[mcp-server] {message}{RESET_COLOR}"
+  print(formatted, file=sys.stderr, flush=True)
+
 
 @dataclass
 class StockPrice:
@@ -104,12 +120,14 @@ class StockDataProvider:
 
     live_price = self._fetch_live_price(clean_symbol)
     if live_price is not None:
+      log_server(f"Using live price for {clean_symbol} via yfinance.")
       return StockPrice(clean_symbol, live_price, "yfinance")
 
     fallback_price = self._fallback_prices.get(clean_symbol)
     if fallback_price is None:
       raise ValueError(f"Price not available for symbol {clean_symbol}.")
 
+    log_server(f"Using CSV fallback for {clean_symbol}.")
     return StockPrice(clean_symbol, fallback_price, "fallback_csv")
 
   def compare_stocks(self, symbol_one: str, symbol_two: str) -> Dict[str, Dict[str, str]]:
@@ -254,6 +272,7 @@ class StockToolServer:
     input_stream : Iterable[str], optional
         Source of newline-delimited JSON. Defaults to ``sys.stdin``.
     """
+    log_server("Starting raw stdio MCP server and sending readiness signal.")
     ready_message = {"type": "ready", "version": "1.0"}
     print(json.dumps(ready_message), flush=True)
 
@@ -265,26 +284,38 @@ class StockToolServer:
       try:
         payload = json.loads(line)
       except json.JSONDecodeError:
+        log_server("Rejecting payload: invalid JSON.")
         self._emit_error("unknown", "Invalid JSON payload.")
         continue
 
       message_type = payload.get("type")
       if message_type == "shutdown":
+        log_server(f"Shutdown requested by client (id={payload.get('id')}).")
         self._emit_response(payload.get("id", "unknown"), {"status": "shutting_down"})
         break
 
       if message_type != "invoke":
+        log_server(
+          f"Unsupported message type '{message_type}' received; id={payload.get('id', 'unknown')}.",
+        )
         self._emit_error(payload.get("id", "unknown"), "Unsupported message type.")
         continue
 
       request_id = payload.get("id")
       tool_name = payload.get("tool")
       arguments = payload.get("arguments") or {}
+      log_server(
+        f"Executing tool '{tool_name}' for request {request_id} with arguments {arguments}.",
+      )
 
       try:
         result = self._invoke_tool(tool_name, arguments)
+        log_server(
+          f"Tool '{tool_name}' completed for request {request_id}; result keys={list(result.keys())}.",
+        )
         self._emit_response(request_id, result)
       except Exception as exc:  # pylint: disable=broad-except
+        log_server(f"Error while executing request {request_id}: {exc}")
         self._emit_error(request_id, str(exc))
 
   def _invoke_tool(self, tool_name: str, arguments: Dict[str, str]) -> Dict[str, object]:
