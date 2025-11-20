@@ -25,8 +25,6 @@ import pandas as pd
 import os
 from typing import Optional
 
-from raw_version.server import log_server
-
 mcp = FastMCP("Stock Server")
 
 # CSV file path - modify as needed
@@ -61,13 +59,12 @@ def get_price_from_csv(symbol: str) -> Optional[float]:
         stock_row = df[df['symbol'] == symbol]
         
         if not stock_row.empty:
-            log_server(f"Using CSV fallback for {symbol}.")
             return float(stock_row['price'].iloc[0])
         else:
             return None
             
     except Exception as e:
-        log_server(f"Error reading CSV file: {e}")
+        print(f"Error reading CSV file: {e}")
         return None
 
 def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
@@ -89,7 +86,6 @@ def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
         
         if not data.empty:
             price = data['Close'].iloc[-1]
-            log_server(f"Using live price for {symbol} via yfinance.")
             return price, 'yfinance'
         else:
             # Try using regular market price from ticker info
@@ -97,11 +93,10 @@ def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
             price = info.get("regularMarketPrice")
             
             if price is not None:
-                log_server(f"Using live price info field for {symbol} via yfinance.")
                 return price, 'yfinance'
     
     except Exception as e:
-        log_server(f"yfinance error for {symbol}: {e}")
+        #print(f"yfinance error for {symbol}: {e}")
         pass
     
     # Fallback to CSV
@@ -127,10 +122,8 @@ def get_stock_price(symbol: str) -> str:
     
     if price is not None:
         source_text = " (from Yahoo Finance)" if source == 'yfinance' else " (from local data)"
-        log_server(f"Serving get_stock_price for {symbol} via {source}.")
         return f"The current price of {symbol} is ${price:.2f}{source_text}"
     else:
-        log_server(f"Could not retrieve price for {symbol}; no live or CSV data.")
         return f"Could not retrieve price for {symbol} from either Yahoo Finance or local data. "\
                f"Please ensure the symbol is correct and that local data file '{CSV_FILE_PATH}' "\
                f"exists with the required format."
@@ -163,14 +156,11 @@ def compare_stocks(symbol1: str, symbol2: str) -> str:
     source2_text = " (YF)" if source2 == 'yfinance' else " (local)"
     
     if price1 > price2:
-        comparison = f"{symbol1} (${price1:.2f}{source1_text}) is higher than {symbol2} (${price2:.2f}{source2_text})."
+        return f"{symbol1} (${price1:.2f}{source1_text}) is higher than {symbol2} (${price2:.2f}{source2_text})."
     elif price1 < price2:
-        comparison = f"{symbol1} (${price1:.2f}{source1_text}) is lower than {symbol2} (${price2:.2f}{source2_text})."
+        return f"{symbol1} (${price1:.2f}{source1_text}) is lower than {symbol2} (${price2:.2f}{source2_text})."
     else:
-        comparison = f"Both {symbol1} and {symbol2} have the same price (${price1:.2f})."
-    
-    log_server(f"Serving compare_stocks for {symbol1} vs {symbol2}.")
-    return comparison
+        return f"Both {symbol1} and {symbol2} have the same price (${price1:.2f})."
 
 if __name__ == "__main__":
     """
@@ -198,5 +188,4 @@ if __name__ == "__main__":
         - Primary Data Source: Yahoo Finance via yfinance library
         - Fallback Data Source: Local CSV file (stocks_data.csv)
     """
-    log_server("Starting course_version MCP server over stdio.")
     mcp.run()
