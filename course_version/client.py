@@ -122,8 +122,8 @@ async def main(user_input: str):
     print("The User Input is : ", user_input)
     server_params = StdioServerParameters(
             command="python",
-            args=["mcp_server.py"],
-            cwd="/home/jovyan/work" #Configure your current working directory
+            args=["server.py"],
+            cwd="./" #Configure your current working directory
         )
     try:
         async with stdio_client(server_params) as (read, write):
