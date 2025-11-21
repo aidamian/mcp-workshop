@@ -145,14 +145,14 @@ def interactive_loop(debug: bool = True) -> None:
   server_path = Path(__file__).with_name("server.py")
 
   if api_key:
-    log_color("Deepseek routing is enabled.", "w")
+    log_color("Deepseek routing is enabled.", "y", prefix="[mcp-client]")
   else:
-    log_color("Deepseek API key not found. Falling back to keyword routing.", "w")
+    log_color("Deepseek API key not found. Falling back to keyword routing.", "y", prefix="[mcp-client]")
 
   if debug:
     log_color("Debug mode enabled; verbose logs will be displayed.", "d", prefix="[debug]")
 
-  log_color("Type 'exit' or 'quit' to leave the session.", "w")
+  log_color("Type 'exit' or 'quit' to leave the session.", "w", prefix="[prompt]")
 
   try:
     with StockToolClient(server_path=server_path, router=router, debug=debug) as client:
@@ -179,7 +179,7 @@ def interactive_loop(debug: bool = True) -> None:
           )
           log_lifecycle_event("analysis", analysis_detail)
         except ValueError as exc:
-          log_color(f"⚠️  {exc}", "r", prefix="[warning]")
+          log_color(f"⚠️  {exc}", "r", prefix="[error]")
           continue
 
         try:
@@ -200,7 +200,7 @@ def interactive_loop(debug: bool = True) -> None:
           message = render_result(tool_call, response)
           log_lifecycle_event("final", message)
         except Exception as exc:  # pylint: disable=broad-except
-          log_color(f"⚠️  {exc}", "r", prefix="[warning]")
+          log_color(f"⚠️  {exc}", "r", prefix="[error]")
   finally:
     pass
 

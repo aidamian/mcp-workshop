@@ -73,21 +73,24 @@ async def generate_response(user_query: str, tools_description: str):
             "arguments": {"location": "default"}
         }
     """
-    log_color(f"Routing query to Gemini for tool selection: {user_query}", "b", prefix="[course-client]")
+    log_color(f"Routing query to Gemini for tool selection: {user_query}", "b", prefix="[model]")
     api_key = os.getenv("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
     
     tool_identifier_prompt = fetch_tool_identifier_prompt()
     tool_identifier_prompt = tool_identifier_prompt.format(user_query=user_query, tools_description=tools_description)
 
+    log_color(f"Gemini prompt: {tool_identifier_prompt}", "d", prefix="[debug]")
     response = client.models.generate_content(
         model='gemini-2.0-flash-001', 
         contents=tool_identifier_prompt
     )
+    log_color(f"Gemini response: {response}", "d", prefix="[debug]")
     raw = response.text.strip()
     raw = raw.replace("```json", "").replace("```","")
     data = json.loads(raw)
-    log_color(f"Gemini identified tool {data.get('tool_identified','?')} with args {data.get('arguments',{})}", "d", prefix="[course-client]")
+    log_color(f"Cleaned response: {data}", "d", prefix="[debug]")
+    log_color(f"Gemini identified tool {data.get('tool_identified','?')} with args {data.get('arguments',{})}", "b", prefix="[model]")
 
     if isinstance(data["arguments"], str):
         args_list = [arg.strip() for arg in data["arguments"].split(",")]
@@ -121,8 +124,8 @@ async def main(user_input: str):
         >>> await main("What is the weather in New York?")
         # Connects to MCP server, identifies weather tool, executes it
     """
-    log_color("-" * 50, "w", prefix="[course-client]")
-    log_color(f"The User Input is : {user_input}", "w", prefix="[course-client]")
+    log_color("-" * 50, "w", prefix="[prompt]")
+    log_color(f"The User Input is : {user_input}", "w", prefix="[prompt]")
     server_params = StdioServerParameters(
             command="python",
             args=["server.py"],
@@ -130,16 +133,16 @@ async def main(user_input: str):
         )
     try:
         async with stdio_client(server_params) as (read, write):
-            log_color("Connection established, creating session...", "p", prefix="[course-client]")
+            log_color("Connection established, creating session...", "y", prefix="[mcp-client]")
             try:
                 async with ClientSession(read, write) as session:
-                    log_color("Session created, initializing...", "p", prefix="[course-client]")
+                    log_color("Session created, initializing...", "y", prefix="[mcp-client]")
                     try:
                         await session.initialize()
-                        log_color("MCP session initialized", "g", prefix="[course-client]")
+                        log_color("MCP session initialized", "y", prefix="[mcp-client]")
 
                         tools = await session.list_tools()
-                        log_color(f"Discovered {len(tools.tools)} tools from server.", "d", prefix="[course-client]")
+                        log_color(f"Discovered {len(tools.tools)} tools from server.", "d", prefix="[debug]")
                         tools_description = ""
                         for each_tool in tools.tools:
                             current_tool_description = "Tool - " + each_tool.name + ":" + "\n"
@@ -150,18 +153,18 @@ async def main(user_input: str):
                         log_color(
                             f"Identified tool: {request_json['tool_identified']} with args {request_json['arguments']}",
                             "b",
-                            prefix="[course-client]",
+                            prefix="[model]",
                         )
                         response = await session.call_tool(request_json["tool_identified"], arguments=request_json["arguments"])
-                        log_color(f"Tool response: {response.content[0].text}", "g", prefix="[course-client]")
-                        log_color("-" * 50, "w", prefix="[course-client]")
+                        log_color(f"Tool response: {response.content[0].text}", "g", prefix="[result]")
+                        log_color("-" * 50, "w", prefix="[prompt]")
                         print("\n\n")
                     except Exception as e:
-                            log_color(f"Session initialization error: {str(e)}", "r", prefix="[course-client]")
+                            log_color(f"Session initialization error: {str(e)}", "r", prefix="[error]")
             except Exception as e:
-                    log_color(f"Session creation error: {str(e)}", "r", prefix="[course-client]")
+                    log_color(f"Session creation error: {str(e)}", "r", prefix="[error]")
     except Exception as e:
-            log_color(f"Connection error: {str(e)}", "r", prefix="[course-client]")
+            log_color(f"Connection error: {str(e)}", "r", prefix="[error]")
 
 if __name__ == "__main__":
     """
@@ -184,5 +187,5 @@ if __name__ == "__main__":
     """
     while True:
         query = input("What is your query? → ")
-        log_color(f"Running query: {query}", "w", prefix="[course-client]")
+        log_color(f"Running query: {query}", "w", prefix="[prompt]")
         asyncio.run(main(query))

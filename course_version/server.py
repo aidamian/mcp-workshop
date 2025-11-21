@@ -54,10 +54,10 @@ def get_price_from_csv(symbol: str) -> Optional[float]:
     Returns:
         Stock price if found, None otherwise
     """
-    log_color(f"CSV lookup requested for {symbol}", "d", prefix="[course-server]", use_stderr=True)
+    log_color(f"CSV lookup requested for {symbol}", "p", prefix="[course-server]", use_stderr=True)
     try:
         if not os.path.exists(CSV_FILE_PATH):
-            log_color(f"CSV file missing at {CSV_FILE_PATH}", "y", prefix="[course-server]", use_stderr=True)
+            log_color(f"CSV file missing at {CSV_FILE_PATH}", "r", prefix="[course-server]", use_stderr=True)
             return None
             
         df = pd.read_csv(CSV_FILE_PATH)
@@ -70,7 +70,7 @@ def get_price_from_csv(symbol: str) -> Optional[float]:
         stock_row = df[df['symbol'] == symbol]
         
         if not stock_row.empty:
-            log_color(f"Found {symbol} price in CSV", "g", prefix="[course-server]", use_stderr=True)
+            log_color(f"Found {symbol} price in CSV", "p", prefix="[course-server]", use_stderr=True)
             return float(stock_row['price'].iloc[0])
         else:
             return None
@@ -99,7 +99,7 @@ def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
         
         if not data.empty:
             price = data['Close'].iloc[-1]
-            log_color(f"yfinance returned closing price for {symbol}", "g", prefix="[course-server]", use_stderr=True)
+            log_color(f"yfinance returned closing price for {symbol}", "p", prefix="[course-server]", use_stderr=True)
             return price, 'yfinance'
         else:
             # Try using regular market price from ticker info
@@ -107,17 +107,17 @@ def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
             price = info.get("regularMarketPrice")
             
             if price is not None:
-                log_color(f"yfinance regularMarketPrice used for {symbol}", "g", prefix="[course-server]", use_stderr=True)
+                log_color(f"yfinance regularMarketPrice used for {symbol}", "p", prefix="[course-server]", use_stderr=True)
                 return price, 'yfinance'
     
     except Exception as e:
-        log_color(f"yfinance lookup failed for {symbol}: {e}", "y", prefix="[course-server]", use_stderr=True)
+        log_color(f"yfinance lookup failed for {symbol}: {e}", "r", prefix="[course-server]", use_stderr=True)
         pass
     
     # Fallback to CSV
     csv_price = get_price_from_csv(symbol)
     if csv_price is not None:
-        log_color(f"Using CSV fallback for {symbol}", "b", prefix="[course-server]", use_stderr=True)
+        log_color(f"Using CSV fallback for {symbol}", "p", prefix="[course-server]", use_stderr=True)
         return csv_price, 'csv'
     
     log_color(f"No data found for {symbol}", "r", prefix="[course-server]", use_stderr=True)
@@ -140,7 +140,7 @@ def get_stock_price(symbol: str) -> str:
     
     if price is not None:
         source_text = " (from Yahoo Finance)" if source == 'yfinance' else " (from local data)"
-        log_color(f"Responding with price {price:.2f} from {source}", "g", prefix="[course-server]", use_stderr=True)
+        log_color(f"Responding with price {price:.2f} from {source}", "p", prefix="[course-server]", use_stderr=True)
         return f"The current price of {symbol} is ${price:.2f}{source_text}"
     else:
         log_color(f"Unable to resolve price for {symbol}", "r", prefix="[course-server]", use_stderr=True)

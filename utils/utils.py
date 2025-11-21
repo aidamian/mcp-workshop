@@ -19,11 +19,11 @@ COLOR_CODES = {
 }
 
 LIFECYCLE_STAGES = {
-  "query": ("User query received", "w", "[agent]"),
+  "query": ("User prompt received", "w", "[prompt]"),
   "analysis": ("Model analysis & tool selection", "b", "[model]"),
-  "mcp": ("MCP client dispatch", "p", "[mcp-client]"),
-  "prepare": ("Model drafting response", "y", "[model]"),
-  "final": ("Model final response", "g", "[model]"),
+  "mcp": ("MCP client dispatch", "y", "[mcp-client]"),
+  "prepare": ("Model drafting response", "b", "[model]"),
+  "final": ("Final result", "g", "[result]"),
 }
 
 
