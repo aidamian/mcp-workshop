@@ -116,11 +116,20 @@ class MCPStockClient:
     params = StdioServerParameters(command=sys.executable, args=["-u", str(self.server_path)])
     if self.debug:
       log_color(f"[MCP Client] Starting server: {params}", "d", prefix="[debug]")
-
-    # log_color()
+      log_color("Running stdio_client...","d", prefix="[debug]")
     self._stdio_cm = stdio_client(params)
+    if self.debug:
+      log_color("stdio_client running.","d", prefix="[debug]")
+      log_color("Entering stdio_client context manager...","d", prefix="[debug]")
     self._read, self._write = await self._stdio_cm.__aenter__()
-    self._session = ClientSession(self._read, self._write)
+    if self.debug:
+      log_color("Stdio client context manager entered.","d", prefix="[debug]")
+      log_color("Creating MCP client session...","d", prefix="[debug]")
+    if self.debug:
+      self._session = ClientSession(self._read, self._write)
+    if self.debug:
+      log_color("MCP client session created.","d", prefix="[debug]")
+      log_color("Initializing MCP session...","d", prefix="[debug]")
     await self._session.initialize()
     if self.debug:
       log_color("[MCP Client] MCP session initialised.", "d", prefix="[debug]")
