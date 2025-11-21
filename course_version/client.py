@@ -7,6 +7,7 @@ import os
 import json
 from google import genai
 from dotenv import load_dotenv
+from utils.utils import log_color
 
 load_dotenv()
 
@@ -40,7 +41,7 @@ def fetch_tool_identifier_prompt():
             arguments: {{"location":"BLR"}}
         }}
 
-        """
+    """
     return tool_identifier_prompt
 
 async def generate_response(user_query: str, tools_description: str):
@@ -72,6 +73,7 @@ async def generate_response(user_query: str, tools_description: str):
             "arguments": {"location": "default"}
         }
     """
+    log_color(f"Routing query to Gemini for tool selection: {user_query}", "b", prefix="[course-client]")
     api_key = os.getenv("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
     
@@ -85,6 +87,7 @@ async def generate_response(user_query: str, tools_description: str):
     raw = response.text.strip()
     raw = raw.replace("```json", "").replace("```","")
     data = json.loads(raw)
+    log_color(f"Gemini identified tool {data.get('tool_identified','?')} with args {data.get('arguments',{})}", "d", prefix="[course-client]")
 
     if isinstance(data["arguments"], str):
         args_list = [arg.strip() for arg in data["arguments"].split(",")]
@@ -118,7 +121,9 @@ async def main(user_input: str):
         >>> await main("What is the weather in New York?")
         # Connects to MCP server, identifies weather tool, executes it
     """
+    log_color("-" * 50, "w", prefix="[course-client]")
     print("-"*50)
+    log_color(f"The User Input is : {user_input}", "w", prefix="[course-client]")
     print("The User Input is : ", user_input)
     server_params = StdioServerParameters(
             command="python",
@@ -127,15 +132,19 @@ async def main(user_input: str):
         )
     try:
         async with stdio_client(server_params) as (read, write):
+            log_color("Connection established, creating session...", "p", prefix="[course-client]")
             print("Connection established, creating session...")
             try:
                 async with ClientSession(read, write) as session:
+                    log_color("Session created, initializing...", "p", prefix="[course-client]")
                     print("[agent] Session created, initializing...")
                     try:
                         await session.initialize()
+                        log_color("MCP session initialized", "g", prefix="[course-client]")
                         print("[agent] MCP session initialized")
 
                         tools = await session.list_tools()
+                        log_color(f"Discovered {len(tools.tools)} tools from server.", "d", prefix="[course-client]")
                         tools_description = ""
                         for each_tool in tools.tools:
                             current_tool_description = "Tool - " + each_tool.name + ":" + "\n"
@@ -143,16 +152,25 @@ async def main(user_input: str):
                             tools_description +=  current_tool_description + "\n"
 
                         request_json = await generate_response(user_query=user_input, tools_description=tools_description)
-                        print(f"To execute the User Query: {user_input} - The Identified tool is {request_json['tool_identified']}, and the parameters required are {request_json['arguments']}")
+                        log_color(
+                            f"Identified tool: {request_json['tool_identified']} with args {request_json['arguments']}",
+                            "b",
+                            prefix="[course-client]",
+                        )
                         response = await session.call_tool(request_json["tool_identified"], arguments=request_json["arguments"])
+                        log_color(f"Tool response: {response.content[0].text}", "g", prefix="[course-client]")
                         print(f"{response.content[0].text}")
+                        log_color("-" * 50, "w", prefix="[course-client]")
                         print("-"*50)
                         print("\n\n")
                     except Exception as e:
+                            log_color(f"Session initialization error: {str(e)}", "r", prefix="[course-client]")
                             print(f"[agent] Session initialization error: {str(e)}")
             except Exception as e:
+                    log_color(f"Session creation error: {str(e)}", "r", prefix="[course-client]")
                     print(f"[agent] Session creation error: {str(e)}")
     except Exception as e:
+            log_color(f"Connection error: {str(e)}", "r", prefix="[course-client]")
             print(f"[agent] Connection error: {str(e)}")
 
 if __name__ == "__main__":

@@ -117,6 +117,7 @@ class MCPStockClient:
     if self.debug:
       log_color(f"[MCP Client] Starting server: {params}", "d", prefix="[debug]")
 
+    # log_color()
     self._stdio_cm = stdio_client(params)
     self._read, self._write = await self._stdio_cm.__aenter__()
     self._session = ClientSession(self._read, self._write)
