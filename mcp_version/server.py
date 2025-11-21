@@ -9,7 +9,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
   sys.path.insert(0, str(REPO_ROOT))
 
-from raw_version.server import StockDataProvider, log_server
+from raw_version.server import StockDataProvider
+from utils.utils import log_color
 
 try:  # pragma: no cover - the import is exercised at runtime
   from mcp.server.fastmcp import FastMCP
@@ -22,6 +23,10 @@ CSV_PATH = REPO_ROOT / "stocks_data.csv"
 
 provider = StockDataProvider(csv_path=CSV_PATH)
 server = FastMCP("stocks-mcp")
+
+# Emit server logs to stderr to avoid interfering with stdio transport.
+def log_server(message: str) -> None:
+  log_color(message, "p", prefix="[mcp-server]", use_stderr=True)
 
 
 @server.tool()
