@@ -16,14 +16,15 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional
 
 from dotenv import load_dotenv
+from utils.utils import log_color
 
 try:
   import yfinance as yf
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
   yf = None  # type: ignore[assignment]
 
-SERVER_COLOR = "\033[95m"
-RESET_COLOR = "\033[0m"
+SERVER_PREFIX = "[mcp-server]"
+SERVER_COLOR = "p"
 
 
 def log_server(message: str) -> None:
@@ -35,7 +36,7 @@ def log_server(message: str) -> None:
   message : str
       Human-readable status text.
   """
-  formatted = f"{SERVER_COLOR}[mcp-server] {message}{RESET_COLOR}"
+  formatted = log_color(message, SERVER_COLOR, prefix=SERVER_PREFIX, emit=False)
   print(formatted, file=sys.stderr, flush=True)
 
 

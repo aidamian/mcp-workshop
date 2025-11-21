@@ -73,7 +73,7 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 
 - `[agent]` (bright white): user-side events and prompts in the REPL.
 - `[model]` (blue): Deepseek/heuristic analysis that selects a tool and arguments.
-- `[mcp-client]` (purple): stdio dispatch/response lifecycle from the client transport.
+- `[mcp-client]` (purple): stdio dispatch/response lifecycle from the client transport (all variants).
 - `[mcp-server]` (purple): server execution logs for the invoked tool (stderr to avoid JSON noise).
 - `[model]` (yellow): model drafting based on the tool payload.
 - `[model]` (green): final model-facing reply shown to the user.
