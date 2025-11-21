@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import httpx
 from dotenv import load_dotenv
 
 from openai import OpenAI
@@ -36,7 +37,12 @@ class OpenAIBackedRouter(BaseRouter):
   ) -> None:
     super().__init__(api_key=api_key, model=model, debug=debug)
     self.base_url = base_url
-    self._client: Optional[OpenAI] = OpenAI(api_key=api_key, base_url=base_url) if api_key else None
+    if api_key:
+      # Explicit http_client sidesteps httpx>=0.28 dropping the `proxies` kwarg the OpenAI SDK still uses.
+      http_client = httpx.Client(follow_redirects=True, timeout=httpx.Timeout(600.0, connect=5.0))
+      self._client = OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+    else:
+      self._client = None
 
   def _deepseek_route(self, prompt: str) -> ToolCall:
     if not self._client:

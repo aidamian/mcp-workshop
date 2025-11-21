@@ -1,9 +1,13 @@
-from __future__ import annotations
-
 from pathlib import Path
+import sys
 from typing import Dict
 
 from dotenv import load_dotenv
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+# Ensure repo root is on sys.path so sibling modules import correctly when executed as a script.
+if str(REPO_ROOT) not in sys.path:
+  sys.path.insert(0, str(REPO_ROOT))
 
 from raw_version.server import StockDataProvider, log_server
 
@@ -14,7 +18,6 @@ except ImportError as exc:  # pragma: no cover - deferred dependency
 
 load_dotenv()
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 CSV_PATH = REPO_ROOT / "stocks_data.csv"
 
 provider = StockDataProvider(csv_path=CSV_PATH)
@@ -42,7 +45,7 @@ def compare_stocks(symbol_one: str, symbol_two: str) -> Dict[str, Dict[str, str]
 def main() -> None:
   """Entrypoint compatible with ``python -m mcp_version.server``."""
   log_server("Starting MCP (fastmcp) server over stdio.")
-  server.run_stdio()
+  server.run(transport="stdio")
 
 
 if __name__ == "__main__":
