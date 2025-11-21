@@ -4,6 +4,7 @@ Shared logging utilities, lifecycle helpers, and simple data classes.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from typing import Dict
 
@@ -32,6 +33,7 @@ def log_color(
   prefix: str = "[agent]",
   *,
   emit: bool = True,
+  use_stderr: bool = False,
 ) -> str:
   """
   Wrap a message in an ANSI colour code and optionally print it.
@@ -40,7 +42,8 @@ def log_color(
   suffix = "\033[0m"
   formatted = f"{colour_code}{prefix} {message}{suffix}"
   if emit:
-    print(formatted, flush=True)
+    stream = sys.stderr if use_stderr else sys.stdout
+    print(formatted, file=stream, flush=True)
   return formatted
 
 

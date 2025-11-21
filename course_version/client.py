@@ -122,9 +122,7 @@ async def main(user_input: str):
         # Connects to MCP server, identifies weather tool, executes it
     """
     log_color("-" * 50, "w", prefix="[course-client]")
-    print("-"*50)
     log_color(f"The User Input is : {user_input}", "w", prefix="[course-client]")
-    print("The User Input is : ", user_input)
     server_params = StdioServerParameters(
             command="python",
             args=["server.py"],
@@ -133,15 +131,12 @@ async def main(user_input: str):
     try:
         async with stdio_client(server_params) as (read, write):
             log_color("Connection established, creating session...", "p", prefix="[course-client]")
-            print("Connection established, creating session...")
             try:
                 async with ClientSession(read, write) as session:
                     log_color("Session created, initializing...", "p", prefix="[course-client]")
-                    print("[agent] Session created, initializing...")
                     try:
                         await session.initialize()
                         log_color("MCP session initialized", "g", prefix="[course-client]")
-                        print("[agent] MCP session initialized")
 
                         tools = await session.list_tools()
                         log_color(f"Discovered {len(tools.tools)} tools from server.", "d", prefix="[course-client]")
@@ -159,19 +154,14 @@ async def main(user_input: str):
                         )
                         response = await session.call_tool(request_json["tool_identified"], arguments=request_json["arguments"])
                         log_color(f"Tool response: {response.content[0].text}", "g", prefix="[course-client]")
-                        print(f"{response.content[0].text}")
                         log_color("-" * 50, "w", prefix="[course-client]")
-                        print("-"*50)
                         print("\n\n")
                     except Exception as e:
                             log_color(f"Session initialization error: {str(e)}", "r", prefix="[course-client]")
-                            print(f"[agent] Session initialization error: {str(e)}")
             except Exception as e:
                     log_color(f"Session creation error: {str(e)}", "r", prefix="[course-client]")
-                    print(f"[agent] Session creation error: {str(e)}")
     except Exception as e:
             log_color(f"Connection error: {str(e)}", "r", prefix="[course-client]")
-            print(f"[agent] Connection error: {str(e)}")
 
 if __name__ == "__main__":
     """
@@ -194,4 +184,5 @@ if __name__ == "__main__":
     """
     while True:
         query = input("What is your query? → ")
+        log_color(f"Running query: {query}", "w", prefix="[course-client]")
         asyncio.run(main(query))

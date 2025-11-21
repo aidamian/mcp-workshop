@@ -54,10 +54,10 @@ def get_price_from_csv(symbol: str) -> Optional[float]:
     Returns:
         Stock price if found, None otherwise
     """
-    log_color(f"CSV lookup requested for {symbol}", "d", prefix="[course-server]")
+    log_color(f"CSV lookup requested for {symbol}", "d", prefix="[course-server]", use_stderr=True)
     try:
         if not os.path.exists(CSV_FILE_PATH):
-            log_color(f"CSV file missing at {CSV_FILE_PATH}", "y", prefix="[course-server]")
+            log_color(f"CSV file missing at {CSV_FILE_PATH}", "y", prefix="[course-server]", use_stderr=True)
             return None
             
         df = pd.read_csv(CSV_FILE_PATH)
@@ -70,13 +70,13 @@ def get_price_from_csv(symbol: str) -> Optional[float]:
         stock_row = df[df['symbol'] == symbol]
         
         if not stock_row.empty:
-            log_color(f"Found {symbol} price in CSV", "g", prefix="[course-server]")
+            log_color(f"Found {symbol} price in CSV", "g", prefix="[course-server]", use_stderr=True)
             return float(stock_row['price'].iloc[0])
         else:
             return None
             
     except Exception as e:
-        log_color(f"Error reading CSV file: {e}", "r", prefix="[course-server]")
+        log_color(f"Error reading CSV file: {e}", "r", prefix="[course-server]", use_stderr=True)
         return None
 
 def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
@@ -89,7 +89,7 @@ def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
     Returns:
         Tuple of (price, source) where source is 'yfinance' or 'csv'
     """
-    log_color(f"Fetching price for {symbol} with yfinance fallback", "p", prefix="[course-server]")
+    log_color(f"Fetching price for {symbol} with yfinance fallback", "p", prefix="[course-server]", use_stderr=True)
     # Try yfinance first
     try:
         ticker = yf.Ticker(symbol)
@@ -99,7 +99,7 @@ def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
         
         if not data.empty:
             price = data['Close'].iloc[-1]
-            log_color(f"yfinance returned closing price for {symbol}", "g", prefix="[course-server]")
+            log_color(f"yfinance returned closing price for {symbol}", "g", prefix="[course-server]", use_stderr=True)
             return price, 'yfinance'
         else:
             # Try using regular market price from ticker info
@@ -107,20 +107,20 @@ def get_stock_price_with_fallback(symbol: str) -> tuple[Optional[float], str]:
             price = info.get("regularMarketPrice")
             
             if price is not None:
-                log_color(f"yfinance regularMarketPrice used for {symbol}", "g", prefix="[course-server]")
+                log_color(f"yfinance regularMarketPrice used for {symbol}", "g", prefix="[course-server]", use_stderr=True)
                 return price, 'yfinance'
     
     except Exception as e:
-        log_color(f"yfinance lookup failed for {symbol}: {e}", "y", prefix="[course-server]")
+        log_color(f"yfinance lookup failed for {symbol}: {e}", "y", prefix="[course-server]", use_stderr=True)
         pass
     
     # Fallback to CSV
     csv_price = get_price_from_csv(symbol)
     if csv_price is not None:
-        log_color(f"Using CSV fallback for {symbol}", "b", prefix="[course-server]")
+        log_color(f"Using CSV fallback for {symbol}", "b", prefix="[course-server]", use_stderr=True)
         return csv_price, 'csv'
     
-    log_color(f"No data found for {symbol}", "r", prefix="[course-server]")
+    log_color(f"No data found for {symbol}", "r", prefix="[course-server]", use_stderr=True)
     return None, 'none'
 
 @mcp.tool()
@@ -135,15 +135,15 @@ def get_stock_price(symbol: str) -> str:
     Returns:
         Current stock price information
     """
-    log_color(f"Tool invoked: get_stock_price({symbol})", "p", prefix="[course-server]")
+    log_color(f"Tool invoked: get_stock_price({symbol})", "p", prefix="[course-server]", use_stderr=True)
     price, source = get_stock_price_with_fallback(symbol)
     
     if price is not None:
         source_text = " (from Yahoo Finance)" if source == 'yfinance' else " (from local data)"
-        log_color(f"Responding with price {price:.2f} from {source}", "g", prefix="[course-server]")
+        log_color(f"Responding with price {price:.2f} from {source}", "g", prefix="[course-server]", use_stderr=True)
         return f"The current price of {symbol} is ${price:.2f}{source_text}"
     else:
-        log_color(f"Unable to resolve price for {symbol}", "r", prefix="[course-server]")
+        log_color(f"Unable to resolve price for {symbol}", "r", prefix="[course-server]", use_stderr=True)
         return f"Could not retrieve price for {symbol} from either Yahoo Finance or local data. "\
                f"Please ensure the symbol is correct and that local data file '{CSV_FILE_PATH}' "\
                f"exists with the required format."
@@ -161,17 +161,17 @@ def compare_stocks(symbol1: str, symbol2: str) -> str:
     Returns:
         Comparison of the two stock prices
     """
-    log_color(f"Tool invoked: compare_stocks({symbol1}, {symbol2})", "p", prefix="[course-server]")
+    log_color(f"Tool invoked: compare_stocks({symbol1}, {symbol2})", "p", prefix="[course-server]", use_stderr=True)
     # Get prices for both symbols
     price1, source1 = get_stock_price_with_fallback(symbol1)
     price2, source2 = get_stock_price_with_fallback(symbol2)
     
     if price1 is None:
-        log_color(f"Missing data for {symbol1}", "r", prefix="[course-server]")
+        log_color(f"Missing data for {symbol1}", "r", prefix="[course-server]", use_stderr=True)
         return f"Could not retrieve price for {symbol1} from either Yahoo Finance or local data."
     
     if price2 is None:
-        log_color(f"Missing data for {symbol2}", "r", prefix="[course-server]")
+        log_color(f"Missing data for {symbol2}", "r", prefix="[course-server]", use_stderr=True)
         return f"Could not retrieve price for {symbol2} from either Yahoo Finance or local data."
     
     # Create source information
@@ -211,5 +211,5 @@ if __name__ == "__main__":
         - Primary Data Source: Yahoo Finance via yfinance library
         - Fallback Data Source: Local CSV file (stocks_data.csv)
     """
-    log_color("Starting FastMCP Stock Server (course version)", "w", prefix="[course-server]")
+    log_color("Starting FastMCP Stock Server (course version)", "w", prefix="[course-server]", use_stderr=True)
     mcp.run()
