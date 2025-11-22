@@ -158,7 +158,7 @@ def interactive_loop(debug: bool = True) -> None:
     with StockToolClient(server_path=server_path, router=router, debug=debug) as client:
       while True:
         try:
-          prompt_text = log_color("What is your query? → ", "w", emit=False)
+          prompt_text = log_color("What is your query? → ", "w", prefix="[prompt]", emit=False)
           user_input = input(prompt_text).strip()
         except EOFError:
           log_color("\nGoodbye.", "w")

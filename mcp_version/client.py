@@ -125,8 +125,7 @@ class MCPStockClient:
     if self.debug:
       log_color("Stdio client context manager entered.","d", prefix="[debug]")
       log_color("Creating MCP client session...","d", prefix="[debug]")
-    if self.debug:
-      self._session = ClientSession(self._read, self._write)
+    self._session = ClientSession(self._read, self._write)
     if self.debug:
       log_color("MCP client session created.","d", prefix="[debug]")
       log_color("Initializing MCP session...","d", prefix="[debug]")
@@ -210,7 +209,7 @@ async def interactive_loop(debug: bool = True) -> None:
   async with MCPStockClient(server_path=server_path, debug=debug) as client:
     while True:
       try:
-        prompt_text = log_color("What is your query? → ", "w", emit=False)
+        prompt_text = log_color("What is your query? → ", "w", prefix="[prompt]", emit=False)
         loop = asyncio.get_running_loop()
         user_input = await loop.run_in_executor(None, input, prompt_text)
       except (EOFError, KeyboardInterrupt):

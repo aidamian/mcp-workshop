@@ -50,7 +50,7 @@ def compare_stocks(symbol_one: str, symbol_two: str) -> Dict[str, Dict[str, str]
 def main() -> None:
   """Entrypoint compatible with ``python -m mcp_version.server``."""
   log_server("Starting MCP (fastmcp) server over stdio.")
-  server.run(transport="stdio")
+  server.run() # (transport="stdio")
 
 
 if __name__ == "__main__":
