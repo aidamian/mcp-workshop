@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -19,6 +20,7 @@ from utils.utils import ToolCall, log_color, log_lifecycle_event, render_result
 try:  # pragma: no cover - optional dependency for this variant
   from mcp import ClientSession, StdioServerParameters
   from mcp.client.stdio import stdio_client
+  from mcp.shared.memory import create_connected_server_and_client_session
 except ImportError as exc:  # pragma: no cover - deferred dependency
   raise ImportError("Install the 'mcp' package to use the MCP client variant.") from exc
 
@@ -93,10 +95,21 @@ class OpenAIBackedRouter(BaseRouter):
 class MCPStockClient:
   """Manage an MCP stdio session against the stock tool server using the official MCP package."""
 
-  def __init__(self, server_path: Path, debug: bool = True) -> None:
+  def __init__(
+    self,
+    server_path: Path,
+    debug: bool = True,
+    *,
+    force_memory: Optional[bool] = None,
+    init_timeout: float = 10.0,
+  ) -> None:
     self.server_path = server_path
     self.debug = debug
+    force_memory_env = os.getenv("MCP_FORCE_MEMORY", "").lower() in {"1", "true", "yes"}
+    self.force_memory = force_memory if force_memory is not None else force_memory_env
+    self.init_timeout = init_timeout
     self._session: Optional[ClientSession] = None
+    self._memory_session_cm = None
     self._read = None
     self._write = None
     self._stdio_cm = None
@@ -113,6 +126,26 @@ class MCPStockClient:
     if self._session is not None:
       return
 
+    if self.force_memory:
+      if self.debug:
+        log_color("Using in-process memory transport for MCP client.", "d", prefix="[debug]")
+      await self._start_memory_session()
+      return
+
+    try:
+      await self._start_stdio_session()
+    except Exception as exc:  # pylint: disable=broad-except
+      if self.debug:
+        log_color(
+          f"Stdio transport failed ({exc}); falling back to in-process transport.",
+          "y",
+          prefix="[debug]",
+        )
+      await self.shutdown()
+      await self._start_memory_session()
+
+  async def _start_stdio_session(self) -> None:
+    """Spin up the FastMCP server as a subprocess and initialise the MCP session."""
     params = StdioServerParameters(command=sys.executable, args=["-u", str(self.server_path)])
     if self.debug:
       log_color(f"[MCP Client] Starting server: {params}", "d", prefix="[debug]")
@@ -125,18 +158,44 @@ class MCPStockClient:
     if self.debug:
       log_color("Stdio client context manager entered.","d", prefix="[debug]")
       log_color("Creating MCP client session...","d", prefix="[debug]")
-    self._session = ClientSession(self._read, self._write)
+    self._session = ClientSession(
+      self._read,
+      self._write,
+      read_timeout_seconds=timedelta(seconds=self.init_timeout),
+    )
     if self.debug:
       log_color("MCP client session created.","d", prefix="[debug]")
+      log_color("Entering MCP client session context...","d", prefix="[debug]")
+    await self._session.__aenter__()
+    if self.debug:
+      log_color("MCP client session context entered.","d", prefix="[debug]")
       log_color("Initializing MCP session...","d", prefix="[debug]")
     await self._session.initialize()
     if self.debug:
       log_color("[MCP Client] MCP session initialised.", "d", prefix="[debug]")
 
+  async def _start_memory_session(self) -> None:
+    """Connect to the FastMCP server in-process using memory streams."""
+    from mcp_version import server as server_module
+
+    self._memory_session_cm = create_connected_server_and_client_session(
+      server_module.server._mcp_server,  # pylint: disable=protected-access
+      raise_exceptions=True,
+    )
+    self._session = await self._memory_session_cm.__aenter__()
+    if self.debug:
+      log_color("In-process MCP session initialised.", "d", prefix="[debug]")
+
   async def shutdown(self) -> None:
     """Terminate the MCP session and the underlying subprocess."""
+    if self._memory_session_cm is not None:
+      await self._memory_session_cm.__aexit__(None, None, None)
+      self._memory_session_cm = None
+      self._session = None
+      return
+
     if self._session is not None:
-      await self._session.close()
+      await self._session.__aexit__(None, None, None)
       self._session = None
 
     if self._write is not None:
