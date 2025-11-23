@@ -11,38 +11,40 @@ from utils.utils import log_color
 
 load_dotenv()
 
+TOOL_IDENTIFIER_PROMPT = """
+
+You have been given access to the below MCP Server Tools
+
+{tools_description}
+
+You must identify the appropriate tool only from the above tools required to resolve the user query along with the arguments,
+
+{user_query}
+
+Your output should be in json like below
+
+{{
+    user_query: "User Query",
+    tool_identified: "Tool Name",
+    arguments: "arg1, arg2"
+}}
+
+Example:
+
+User Query: What is the weather in Bengaluru?
+
+Your Response:
+{{
+    user_query: "What is the weather in Bengaluru?"
+    tool_identified: "get_weather"
+    arguments: {{"location":"BLR"}}
+}}
+
+"""
+
 def fetch_tool_identifier_prompt():
-    tool_identifier_prompt = """
-
-        You have been given access to the below MCP Server Tools
-
-        {tools_description}
-
-        You must identify the appropriate tool only from the above tools required to resolve the user query along with the arguments,
-
-        {user_query}
-
-        Your output should be in json like below
-
-        {{
-            user_query: "User Query",
-            tool_identified: "Tool Name",
-            arguments: "arg1, arg2"
-        }}
-
-        Example:
-
-        User Query: What is the weather in Bengaluru?
-
-        Your Response:
-        {{
-            user_query: "What is the weather in Bengaluru?"
-            tool_identified: "get_weather"
-            arguments: {{"location":"BLR"}}
-        }}
-
-    """
-    return tool_identifier_prompt
+  tool_identifier_prompt = TOOL_IDENTIFIER_PROMPT
+  return tool_identifier_prompt
 
 async def generate_response(user_query: str, tools_description: str):
     """
