@@ -1,18 +1,26 @@
 # MCP Workshop
-This repository demonstrates a Deepseek-powered stock data assistant with two interchangeable implementations:
+## Alglrithms & Flows
+- **Use case:** A conversational stock assistant that turns natural-language prompts into tool calls (`get_stock_price`, `compare_stocks`), sourcing data from Yahoo Finance first and falling back to `stocks_data.csv` for deterministic replies.
+- **Common flow:** User prompt → router picks tool/args (AI-assisted with heuristic fallback) → server executes against live/CSV data → client renders a concise, colour-coded response.
+- **Raw stdio:** Minimal JSON-over-stdio between a subprocess client and server; fastest to run and the default for tests.
+- **MCP SDK:** Uses the official `mcp` package with stdio or in-process memory transport; best when integrating external MCP-capable tools.
+- **Course/Gemini:** Mirrors the MCP transport but asks Google Gemini to choose the tool/args; designed for tutorials showcasing alternate routing models.
 
-- **Raw stdio variant (`raw_version/`)** — mirrors the original workshop with a lightweight JSON-over-stdio contract between the client and server.
-- **MCP SDK variant (`mcp_version/`)** — reimplements the transport using the official `mcp` PyPI package so any MCP-capable tooling can connect.
+This repository demonstrates a Deepseek-powered stock data assistant with three interchangeable implementations:
 
-The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw implementation for backwards compatibility, while the new MCP-aware modules live under `mcp_version/`.
+- **Raw stdio variant (`raw_version/`)** — mirrors the original workshop with a lightweight JSON-over-stdio contract between the client and server; the default for tests and quick demos.
+- **MCP SDK variant (`mcp_version/`)** — reimplements the transport using the official `mcp` PyPI package so any MCP-capable tooling can connect over stdio.
+- **Course/tutorial variant (`course_version/`)** — a teaching-focused MCP build that swaps Deepseek routing for Google Gemini to illustrate tool selection with a different model.
+
+The root entry points (`mcp_client.py`, `mcp_server.py`) re-export the raw implementation for backwards compatibility. The MCP and course variants are self-contained under their folders and can be targeted explicitly by the test harness.
 
 ## Features
 
-- 🤖 Deepseek-Assisted Query Understanding: Natural-language prompts are routed to tools via Deepseek when an API key is present, with deterministic heuristics as a fallback.
+- 🤖 AI-Assisted Routing: Deepseek powers the raw and MCP builds (with deterministic heuristics as a fallback when no key is present); the course build swaps in Google Gemini for tool selection during the tutorial flow.
 - 📊 Dual Data Sources: Yahoo Finance via `yfinance` when online, and `stocks_data.csv` for deterministic offline coverage.
-- 🔌 Two Transport Options: Choose between the original JSON-over-stdio flow or the MCP SDK-powered tooling, depending on your integration target.
-- 💬 Interactive CLIs: Both variants ship conversational REPLs that mirror the same user experience.
-- 🛡️ Graceful Degradation: Router and data providers fall back automatically so live workshops continue to run even without network access.
+- 🧰 Parallel Builds: Raw JSON stdio, MCP SDK stdio/memory, and a Gemini-powered course variant that share the same stock tools.
+- 💬 Interactive CLIs: Every variant ships a conversational REPL that mirrors the same user experience.
+- 🛡️ Graceful Degradation: Routers and data providers fall back automatically so live workshops continue to run even without network access.
 
 ## Architecture
 
@@ -27,6 +35,12 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 - `mcp_version/server.py` reuses the `StockDataProvider` but registers tools on `fastmcp` from the official `mcp` package, serving over stdio.
 - `mcp_version/client.py` launches the MCP server in-process, establishes an MCP session using `StdioServerParameters`/`stdio_client`, and keeps the same routing logic and terminal UX.
 - Any external MCP-aware client (for example, IDE integrations or agent frameworks) can connect to `mcp_version/server.py` directly.
+
+### Course Variant (`course_version/`)
+
+- `course_version/server.py` is another FastMCP server that uses the same CSV/yfinance data flow and colour-coded logging as the other builds.
+- `course_version/client.py` demonstrates tool routing with Google Gemini (`gemini-2.0-flash-001`) instead of Deepseek. It fetches the tool list from the server, asks Gemini to pick a tool plus arguments, and then executes the call over MCP stdio.
+- Run this variant from inside the `course_version/` directory (or adjust the `cwd` in the client) so the client can spawn `server.py` correctly. Set `GEMINI_API_KEY` in your `.env` before starting the REPL.
 
 ## Getting Started
 
@@ -69,11 +83,11 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
    uv run python mcp_client.py --no-debug
    ```
 
-### Logging Flow (Raw Variant)
+### Logging Flow (Raw Variant and Shared Palette)
 
 - `[agent]` (bright white): user-side events and prompts in the REPL.
 - `[model]` (blue): Deepseek/heuristic analysis that selects a tool and arguments.
-- `[mcp-client]` (purple): stdio dispatch/response lifecycle from the client transport (all variants).
+- `[mcp-client]` (purple): stdio dispatch/response lifecycle from the client transport (all variants reuse the same palette).
 - `[mcp-server]` (purple): server execution logs for the invoked tool (stderr to avoid JSON noise).
 - `[model]` (yellow): model drafting based on the tool payload.
 - `[model]` (green): final model-facing reply shown to the user.
@@ -91,6 +105,34 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
    uv run python -m mcp_version.server
    ```
    Connect with your preferred MCP-enabled tooling by configuring it to spawn this module over stdio.
+
+### Running the Course Tutorial Variant
+
+1. Set `GEMINI_API_KEY` in `.env` so the client can route through Gemini.
+2. From the repository root, change into the course folder to keep paths aligned:
+   ```bash
+   cd course_version
+   ```
+3. Start the Gemini-routed client (it spawns the FastMCP server automatically for each prompt):
+   ```bash
+   uv run python client.py
+   ```
+4. To host the course server for another MCP-aware client instead of the bundled REPL:
+   ```bash
+   uv run python server.py
+   ```
+
+## Testing
+
+- Tests live in `tests/` and default to the raw variant so you can run them without API keys or optional packages.
+- Target a specific build via the selector in `tests/run_tests.py`:
+  ```bash
+  uv run python tests/run_tests.py raw     # default
+  uv run python tests/run_tests.py mcp     # requires `mcp` installed
+  uv run python tests/run_tests.py course  # requires `google-genai` and `GEMINI_API_KEY` for Gemini routing
+  ```
+- You can also set `TEST_VARIANT` (for example, `TEST_VARIANT=mcp uv run python tests/run_tests.py`) to avoid passing CLI arguments.
+- The course tutorial client is intentionally lightweight and may diverge from the shared pytest cases; focus on raw/mcp for automated runs, or align the tutorial helpers before running a full `uv run python -m pytest tests/` sweep.
 
 ## Repository Layout
 
@@ -110,7 +152,7 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 │   └── server.py
 ├── stocks_data.csv        # Offline stock price cache
 ├── requirements.txt       # Python dependencies for both variants
-├── tests/                 # Integration tests against the raw variant
+├── tests/                 # Variant-aware integration tests and helpers
 └── README.md              # Project overview
 ```
 
@@ -133,6 +175,7 @@ The root entry points (`mcp_client.py`, `mcp_server.py`) now re-export the raw i
 - `.env` must define `DEEPSEEK_KEY`. Without it the router falls back to keyword heuristics.
 - `.env` can include `DEEPSEEK_BASE_URL` to override the Deepseek endpoint used by the OpenAI client.
 - `.env` may include `GEMINI_API_KEY` to enable Gemini routing in `course_version`.
+- Set `MCP_FORCE_MEMORY=1` to force the MCP client to use the in-process memory transport instead of spawning a stdio subprocess (helpful for CI and offline runs).
 - `stocks_data.csv` follows `symbol,price,last_updated`. Extend it with additional rows for more offline coverage.
 
 ## Data Sources

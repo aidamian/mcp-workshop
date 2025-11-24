@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
   sys.path.insert(0, str(REPO_ROOT))
+  # Ensure local utilities resolve when the server is launched as a script.
 
 from utils.utils import log_color
 
@@ -30,6 +31,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 SERVER_PREFIX = "[mcp-server]"
 SERVER_COLOR = "p"
+# Colour palette constants so client/server logs stay visually aligned.
 
 
 def log_server(message: str) -> None:
@@ -99,6 +101,7 @@ class StockDataProvider:
         Location of the fallback CSV file. Defaults to ``stocks_data.csv`` in the working directory.
     """
     self.csv_path = csv_path
+    # Preload fallback prices so repeated lookups stay in-memory and fast.
     self._fallback_prices = self._load_csv(csv_path)
 
   def get_stock_price(self, symbol: str) -> StockPrice:
@@ -120,15 +123,18 @@ class StockDataProvider:
     ValueError
         Raised when the symbol is empty or when the symbol is unknown after exhausting all sources.
     """
+    # Normalise and validate the incoming ticker.
     clean_symbol = symbol.strip().upper()
     if not clean_symbol:
       raise ValueError("Symbol must be a non-empty string.")
 
+    # Try live market data first to prioritise fresh quotes.
     live_price = self._fetch_live_price(clean_symbol)
     if live_price is not None:
       log_server(f"Using live price for {clean_symbol} via yfinance.")
       return StockPrice(clean_symbol, live_price, "yfinance")
 
+    # Fallback to deterministic CSV data to keep workshops runnable offline.
     fallback_price = self._fallback_prices.get(clean_symbol)
     if fallback_price is None:
       raise ValueError(f"Price not available for symbol {clean_symbol}.")
@@ -157,9 +163,11 @@ class StockDataProvider:
     ValueError
         Propagated from :meth:`get_stock_price` if either symbol cannot be resolved.
     """
+    # Resolve both symbols through the same provider pipeline for consistency.
     price_one = self.get_stock_price(symbol_one)
     price_two = self.get_stock_price(symbol_two)
 
+    # Build a human-readable comparison summary.
     if price_one.price > price_two.price:
       summary = (
         f"{price_one.symbol} is trading higher than "
@@ -203,6 +211,7 @@ class StockDataProvider:
     if yf is None:
       return None
     try:
+      # fast_info is the quickest path when present.
       ticker = yf.Ticker(symbol)
       fast_info = getattr(ticker, "fast_info", None)
       if fast_info:
@@ -210,6 +219,7 @@ class StockDataProvider:
         if live_price:
           return float(live_price)
 
+      # Fall back to recent intraday history if fast_info is missing or empty.
       history = ticker.history(period="1d", interval="1m")
       if not history.empty:
         return float(history["Close"].iloc[-1])
@@ -238,14 +248,17 @@ class StockDataProvider:
     with path.open("r", encoding="utf-8") as csv_file:
       for index, line in enumerate(csv_file):
         if index == 0:
+          # Skip the header row when present.
           continue
         parts = [value.strip() for value in line.split(",")]
         if len(parts) < 2:
+          # Ignore malformed rows rather than failing the entire load.
           continue
         symbol, price_str = parts[0], parts[1]
         try:
           fallback[symbol.upper()] = float(price_str)
         except ValueError:
+          # Leave bad numeric values out of the fallback cache.
           continue
     return fallback
 
@@ -267,6 +280,7 @@ class StockToolServer:
     provider : StockDataProvider
         Concrete provider used to fulfil stock price requests.
     """
+    # The shared provider encapsulates live/CSV resolution logic.
     self.provider = provider
 
   def run(self, input_stream: Iterable[str] = sys.stdin) -> None:
@@ -278,10 +292,12 @@ class StockToolServer:
     input_stream : Iterable[str], optional
         Source of newline-delimited JSON. Defaults to ``sys.stdin``.
     """
+    # Emit a ready signal so clients can block until the server is listening.
     log_server("Starting raw stdio MCP server and sending readiness signal.")
     ready_message = {"type": "ready", "version": "1.0"}
     print(json.dumps(ready_message), flush=True)
 
+    # Main request loop: parse, validate, execute, and respond.
     for line in input_stream:
       line = line.strip()
       if not line:
@@ -307,6 +323,7 @@ class StockToolServer:
         self._emit_error(payload.get("id", "unknown"), "Unsupported message type.")
         continue
 
+      # Extract tool name and arguments; let _invoke_tool handle validation.
       request_id = payload.get("id")
       tool_name = payload.get("tool")
       arguments = payload.get("arguments") or {}
@@ -345,6 +362,7 @@ class StockToolServer:
     ValueError
         Raised when the tool name is unknown.
     """
+    # Directly dispatch to the correct provider method based on the tool name.
     if tool_name == "get_stock_price":
       symbol = arguments.get("symbol", "")
       price = self.provider.get_stock_price(symbol)
@@ -370,6 +388,7 @@ class StockToolServer:
     result : Dict[str, object]
         Result payload returned by the invoked tool.
     """
+    # The client expects newline-delimited JSON with a matching request id.
     payload = {"type": "response", "id": request_id, "result": result}
     print(json.dumps(payload), flush=True)
 
@@ -385,6 +404,7 @@ class StockToolServer:
     message : str
         Human-readable error message.
     """
+    # Use the same envelope shape as successful responses to simplify clients.
     payload = {"type": "response", "id": request_id, "error": message}
     print(json.dumps(payload), flush=True)
 
@@ -394,6 +414,7 @@ def main() -> None:
   Entry point that initialises environment variables and starts the server.
   """
   load_dotenv()
+  # Instantiate provider and server, then enter the stdio loop.
   provider = StockDataProvider()
   server = StockToolServer(provider)
   server.run()
